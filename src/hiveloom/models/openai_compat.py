@@ -20,6 +20,7 @@ from typing import Any
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
+from hiveloom.deadline import remaining_seconds
 from hiveloom.models.provider import (
     PROVIDER_REASONING_MAX_BYTES,
     ContextOverflowError,
@@ -141,8 +142,9 @@ class OpenAICompatProvider(ModelProvider):
         last_exc: Exception | None = None
         for attempt in range(_MAX_RETRIES + 1):
             try:
-                with urlrequest.urlopen(request, timeout=self._timeout) as resp:  # noqa: S310
+                with urlrequest.urlopen(request, timeout=remaining_seconds(self._timeout)) as resp:  # noqa: S310
                     body = json.loads(resp.read().decode("utf-8"))
+                remaining_seconds()
                 embedded = _embedded_error(body)
                 if embedded is None:
                     return body
@@ -174,7 +176,8 @@ class OpenAICompatProvider(ModelProvider):
                 retryable = True
             if not retryable or attempt == _MAX_RETRIES:
                 break
-            self._sleep(_BASE_DELAY * (2**attempt))
+            self._sleep(min(_BASE_DELAY * (2**attempt), remaining_seconds()))
+            remaining_seconds()
         raise RuntimeError(f"model call failed on attempt {attempt + 1}: {last_exc}") from last_exc
 
 

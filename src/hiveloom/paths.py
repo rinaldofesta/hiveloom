@@ -13,7 +13,10 @@ from pathlib import Path
 
 def hiveloom_home() -> Path:
     """The user-level hiveloom directory: ``$HIVELOOM_HOME`` or ``~/.hiveloom``."""
-    return Path(os.environ.get("HIVELOOM_HOME", "~/.hiveloom")).expanduser()
+    # An empty deployment variable must not turn the working directory into
+    # the trust store. Return an absolute path callers can retain across chdir.
+    configured = os.environ.get("HIVELOOM_HOME") or "~/.hiveloom"
+    return Path(configured).expanduser().resolve()
 
 
 def user_extensions_dir() -> Path:
