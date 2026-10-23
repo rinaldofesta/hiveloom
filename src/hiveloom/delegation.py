@@ -364,6 +364,7 @@ def delegate(
     cost_cap_usd: float | None = None,
     hive_path: str | Path | None = None,
     on_event=None,
+    ephemeral: bool = False,
 ) -> DelegationRecord:
     """Run the peer harness in this process and record what it produced.
 
@@ -380,8 +381,11 @@ def delegate(
         literal_input=True,
         lineage=lineage,
         cost_cap_usd=cost_cap_usd,
-        hive_path=hive_path,
+        # An ephemeral parent's Hive is scratch the child must not reuse; the
+        # child gets its own scratch and leaves nothing behind either.
+        hive_path=None if ephemeral else hive_path,
         on_event=on_event,
+        ephemeral=ephemeral,
     )
     return DelegationRecord(
         harness=candidate.name,

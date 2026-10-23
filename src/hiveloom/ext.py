@@ -995,6 +995,9 @@ class _YamlProviderEntry(BaseModel):
     # frontier APIs; a queued trial endpoint or a local server generating at a
     # few tokens a second needs more, or every call fails as "unreachable".
     timeout_seconds: int | None = Field(default=None, gt=0)
+    # Extra top-level response fields to keep in each call's `provider_metadata`
+    # (for example a gateway's "this call fell back" flag).
+    response_metadata_fields: list[str] = Field(default_factory=list, max_length=8)
     # Display name; defaults to the builtin's label, or the provider's name.
     label: str | None = None
     models: list[_YamlModelEntry] = []
@@ -1079,7 +1082,10 @@ def _load_provider_file(yaml_path: Path, source: str) -> None:
             api.register_provider(
                 name,
                 _openai_compat_factory(
-                    entry.base_url, entry.api_key_env, entry.timeout_seconds
+                    entry.base_url,
+                    entry.api_key_env,
+                    entry.timeout_seconds,
+                    entry.response_metadata_fields,
                 ),
                 base_url=entry.base_url,
                 api_key_env=entry.api_key_env or "",
@@ -1151,7 +1157,10 @@ def _builtin_model_is_legacy(provider: str, model_id: str) -> bool:
 
 
 def _openai_compat_factory(
-    base_url: str, api_key_env: str | None, timeout: int | None = None
+    base_url: str,
+    api_key_env: str | None,
+    timeout: int | None = None,
+    response_metadata_fields: list[str] | None = None,
 ) -> ProviderFactory:
     def factory(ctx: BuildContext) -> Any:
         # Same precedence as before (process environment first), same
@@ -1166,9 +1175,12 @@ def _openai_compat_factory(
             )
         from hiveloom.models.openai_compat import OpenAICompatProvider
 
-        if timeout is None:
-            return OpenAICompatProvider(base_url, api_key=api_key)
-        return OpenAICompatProvider(base_url, api_key=api_key, timeout=timeout)
+        options: dict[str, Any] = {}
+        if timeout is not None:
+            options["timeout"] = timeout
+        if response_metadata_fields:
+            options["response_metadata_fields"] = response_metadata_fields
+        return OpenAICompatProvider(base_url, api_key=api_key, **options)
 
     return factory
 

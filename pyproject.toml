@@ -83,6 +83,7 @@ packages = ["src/hiveloom"]
 "docs/journal.md" = "hiveloom/agent_docs/docs/journal.md"
 "docs/workbench.md" = "hiveloom/agent_docs/docs/workbench.md"
 "docs/deploying-and-evolving.md" = "hiveloom/agent_docs/docs/deploying-and-evolving.md"
+"docs/embedding.md" = "hiveloom/agent_docs/docs/embedding.md"
 "docs/control-plane.md" = "hiveloom/agent_docs/docs/control-plane.md"
 "docs/sync-protocol.md" = "hiveloom/agent_docs/docs/sync-protocol.md"
 
@@ -110,6 +111,7 @@ only-include = [
     "docs/journal.md",
     "docs/workbench.md",
     "docs/deploying-and-evolving.md",
+    "docs/embedding.md",
     "docs/control-plane.md",
     "docs/sync-protocol.md",
     "README.md",

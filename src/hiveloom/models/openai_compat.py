@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Sequence
 from http.client import HTTPException
 from typing import Any
 from urllib import error as urlerror
@@ -50,6 +51,10 @@ _SALVAGED_REASONING_MAX_CHARS = 200_000
 # Per-value clamp for provider_metadata's scalar fields. Three fields well
 # under this can never reach PROVIDER_METADATA_MAX_BYTES between them.
 _METADATA_VALUE_MAX_CHARS = 1024
+
+# At most this many caller-declared response fields are kept, so the declared
+# list cannot be the thing that overflows the metadata bound.
+_MAX_EXTRA_METADATA_FIELDS = 8
 
 _STOP_REASONS = {
     "stop": "end_turn",
@@ -96,7 +101,11 @@ class OpenAICompatProvider(ModelProvider):
         *,
         timeout: int = 120,
         sleep=time.sleep,
+        response_metadata_fields: Sequence[str] = (),
     ):
+        # Top-level response fields a gateway adds (for instance a flag marking
+        # a fallback engine). Kept in `provider_metadata` like the standard ones.
+        self._metadata_fields = tuple(response_metadata_fields)[:_MAX_EXTRA_METADATA_FIELDS]
         self._base_url = base_url.rstrip("/")
         self._api_key = api_key
         self._timeout = timeout
@@ -125,6 +134,7 @@ class OpenAICompatProvider(ModelProvider):
         return normalize_openai_response(
             data,
             estimated_input_tokens=self.count_tokens(system=system, messages=messages, tools=tools),
+            metadata_fields=self._metadata_fields,
         )
 
     # ------------------------------------------------------------------ #
@@ -256,7 +266,10 @@ def to_openai_messages(system: str, messages: list[Message]) -> list[dict[str, A
 
 
 def normalize_openai_response(
-    data: dict[str, Any], *, estimated_input_tokens: int = 0
+    data: dict[str, Any],
+    *,
+    estimated_input_tokens: int = 0,
+    metadata_fields: Sequence[str] = (),
 ) -> ModelResponse:
     choices = data.get("choices") or []
     if not choices:
@@ -388,6 +401,15 @@ def normalize_openai_response(
         for key in ("provider", "service_tier", "system_fingerprint")
         if isinstance((value := data.get(key)), str)
     }
+    # Caller-declared gateway fields: scalars only, strings clamped like the
+    # standard ones, and never over a key the runtime itself writes.
+    for key in tuple(metadata_fields)[:_MAX_EXTRA_METADATA_FIELDS]:
+        value = data.get(key)
+        if key == "reasoning_dropped_bytes" or not isinstance(value, (str, bool, int, float)):
+            continue
+        provider_metadata[key] = (
+            value[:_METADATA_VALUE_MAX_CHARS] if isinstance(value, str) else value
+        )
     if reasoning_dropped_bytes:
         provider_metadata["reasoning_dropped_bytes"] = reasoning_dropped_bytes
     return ModelResponse(

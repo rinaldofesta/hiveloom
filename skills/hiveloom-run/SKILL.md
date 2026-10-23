@@ -31,6 +31,22 @@ from the validated `resolved` model and provider. A runtime model override is
 included in that run's harness snapshot and version hash, so Hive statistics
 do not mix it with the model stored in `harness.yaml`.
 
+Vary a prompt or sampling setting for one run without editing the harness: the
+harness lists the paths in its `overridable` field (`hiveloom set overridable
+'["system_prompt","model.temperature"]'`), then
+
+```bash
+hiveloom run ./h --input-text "task" --set model.temperature=0.2 \
+  --set-file system_prompt=prompt.txt --json
+```
+
+An unlisted path or invalid value exits 3. Applied paths and a hash of each
+value appear in `runtime_config.overrides`. `--ephemeral` persists nothing (no
+Hive ingest, traces in a removed temp dir, no trust-store write, no local paths
+in the result) and cannot be combined with `--resume`, `--sync` or
+`--trace-dir`; see `hiveloom guide embedding`. `execution.model_substituted` is
+true when a call was served by a model other than the one requested.
+
 Needs credentials for the configured provider when required (for example,
 `ANTHROPIC_API_KEY` for the default provider, loaded from the harness `.env`
 if present). The small executor model (default `claude-haiku-4-5`) runs

@@ -83,6 +83,9 @@ lessons the run itself offered, reviewed the same way and curated with
   SDK embedding.
 - [docs/deploying-and-evolving.md](docs/deploying-and-evolving.md) — portable
   artifacts and the production feedback loop.
+- [docs/embedding.md](docs/embedding.md) — running a harness inside a host
+  process: fresh interpreter, `ephemeral=True`, spec-declared per-run
+  overrides, stop and deadline, served-model attribution.
 - [docs/evaluating.md](docs/evaluating.md) — versioned local eval documents,
   dataset/scorer extensions, identity, metrics, and privacy.
 - [docs/delegation.md](docs/delegation.md) — handing a task to a fitter peer

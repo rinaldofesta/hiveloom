@@ -410,6 +410,12 @@ queue, same dedup, just triggered on your own cadence instead of per-run.
   gitignored by `init`). Evolution produces a clean diff (the `# evolved` counter
   and version hash); commit it and redeploy. Rollback = `git revert`.
 
+## Embedding in a host
+
+A service that runs a harness per request inside its own sandbox should use
+`run_harness(..., ephemeral=True, overrides=...)` in a fresh interpreter rather
+than copying and rewriting the folder: see [embedding.md](embedding.md).
+
 ## What is intentionally left to you
 
 The artifact and memory models are portable and complete; the *transport* between

@@ -31,6 +31,10 @@ Secrets (`.env`) and local run memory (`.hiveloom/`) are always excluded;
 records the extension packs the spec uses — install them with the runtime at
 the destination, or a run fails naming the missing pack.
 
+Running the shipped harness inside a host service (one run per request,
+nothing persisted, per-run prompt or temperature) is covered in
+`hiveloom guide embedding`.
+
 ## Trust (receiving a harness)
 
 Harness folders carry executable code. Folders built on this machine are

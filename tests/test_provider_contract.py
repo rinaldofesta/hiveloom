@@ -174,6 +174,7 @@ def test_billed_cost_and_redacted_metadata_reach_public_receipts(tmp_path: Path)
             "provider": "claude",
             "requested_model": "claude-haiku-4-5",
             "effective_model": "served-model",
+            "model_substituted": True,
             "provider_request_id": "request-17",
             "usage": {
                 "input_tokens": 10,

@@ -1752,6 +1752,7 @@ class EvolutionConfig(BaseModel):
 # all four and is refused by `touches_frozen` for that reason.
 ALWAYS_FROZEN: tuple[str, ...] = (
     "id",
+    "overridable",
     "guardrails",
     "model",
     "logging.redact",
@@ -1830,6 +1831,16 @@ class HarnessSpec(BaseModel):
     )
     model: ModelConfig = Field(default_factory=ModelConfig, description="Model config.")
     system_prompt: str = Field(description="System prompt for the harness model.")
+    overridable: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Dotted paths a caller may set for one run (`run --set PATH=VALUE`, "
+            "`run_harness(overrides=...)`) without editing the harness. Closed "
+            "allowlist: system_prompt, model.temperature, model.max_tokens, "
+            "model.params.<key>, loop.steps.<step_id>.instruction. Safety-layer "
+            "paths can never be listed. Frozen from evolution."
+        ),
+    )
     tools: list[ToolRef] = Field(default_factory=list, description="Tools available to the loop.")
     mcp_servers: list[McpServerRef] = Field(
         default_factory=list,
@@ -1938,6 +1949,13 @@ class HarnessSpec(BaseModel):
         if not value.strip():
             raise ValueError("name must not be empty")
         return value
+
+    @field_validator("overridable")
+    @classmethod
+    def _check_overridable(cls, value: list[str]) -> list[str]:
+        from hiveloom.overrides import check_overridable_paths
+
+        return check_overridable_paths(value)
 
     @model_validator(mode="after")
     def _ensure_cost_guardrail(self) -> HarnessSpec:

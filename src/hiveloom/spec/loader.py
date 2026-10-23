@@ -61,7 +61,7 @@ def spec_to_dict(spec: HarnessSpec) -> dict[str, Any]:
         loop.pop("attempts", None)
     # Empty lists for these fields are the default; omit them so specs that
     # predate a field keep their exact YAML shape (and version hash) on rewrite.
-    for optional_list in ("extensions", "hooks", "skills"):
+    for optional_list in ("extensions", "hooks", "skills", "overridable"):
         if not data.get(optional_list):
             data.pop(optional_list, None)
     # Preserve the pre-structured representation when regexes are the only

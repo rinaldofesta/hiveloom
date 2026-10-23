@@ -143,6 +143,16 @@ class RunResult(BaseModel):
         return [a["data"] for a in self.artifacts if a.get("kind") == kind]
 
 
+def _model_substituted(requested: str, effective: str | None) -> bool:
+    """Whether the serving side reported a model other than the one requested.
+
+    An exact string comparison: a provider that reports a dated snapshot of the
+    requested alias (``gpt-4o`` served as ``gpt-4o-2024-08-06``) reads as
+    substituted, which is the conservative answer for attribution.
+    """
+    return bool(effective) and effective != requested
+
+
 class GuardrailHalt(RuntimeError):
     """Internal signal used when a model-call guardrail prevents a request."""
 
@@ -199,6 +209,7 @@ class AgentLoop:
         hive_path: str | Path | None = None,
         run_boundary: RunBoundary | None = None,
         approve_network: Callable[[str], bool] | None = None,
+        ephemeral: bool = False,
     ):
         self._spec = spec
         self._base = Path(base_dir)
@@ -260,6 +271,7 @@ class AgentLoop:
             self._base, spec, hive_path=hive_path
         )
         self._approve_network = approve_network
+        self._ephemeral = ephemeral
         self._network_decisions: dict[str, bool] = {}
         # The egress filter is built once: its patterns come from the spec, and
         # `logging.redact` feeds it too, so a pattern scrubbed from the journal
@@ -882,6 +894,9 @@ class AgentLoop:
             "provider": self._router.config.provider,
             "requested_model": self._router.config.id,
             "effective_model": response.model or None,
+            "model_substituted": _model_substituted(
+                self._router.config.id, response.model
+            ),
             "provider_request_id": response.provider_request_id or None,
             "usage": response.usage.model_dump(),
             "cost_usd": cost,
@@ -1768,6 +1783,7 @@ class AgentLoop:
                 ),
                 cost_cap_usd=cap,
                 hive_path=self._hive_path,
+                ephemeral=self._ephemeral,
             )
         except Exception as exc:  # noqa: BLE001 - a peer's failure is not a crash here
             self._trace.emit(
@@ -2095,6 +2111,9 @@ class AgentLoop:
                 None,
             ),
             models_used=models_used,
+            model_substituted=any(
+                call.get("model_substituted") for call in self._provider_calls
+            ),
             started_at=self._started_at,
             finished_at=datetime.now(UTC).isoformat(),
             duration_ms=round(duration_seconds * 1000),

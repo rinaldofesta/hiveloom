@@ -277,6 +277,12 @@ The default timeout is 120 seconds per HTTP request. Retries can consume
 additional time. Runtime wall-clock guardrails are checked at loop boundaries;
 they do not cancel a blocking HTTP request.
 
+A gateway that adds its own top-level response fields (for example a flag
+marking a fallback engine) can have up to eight of them kept, as scalars, in
+each call's `provider_metadata` by listing them as `response_metadata_fields:
+[x_served_by]` on the provider entry. See
+[embedding.md](embedding.md#which-model-answered).
+
 ## Generation and evolution models
 
 `hiveloom generate` and `hiveloom evolve` use a *strong* model, separate from

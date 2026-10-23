@@ -85,6 +85,11 @@ REFERENCE_TOPICS = (
         "docs/deploying-and-evolving.md",
     ),
     (
+        "embedding",
+        "Embedding in a host process: ephemeral runs, per-run overrides, attribution.",
+        "docs/embedding.md",
+    ),
+    (
         "control-plane",
         "Authenticated operational HTTP API and concurrency model.",
         "docs/control-plane.md",

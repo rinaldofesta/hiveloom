@@ -77,24 +77,33 @@ def revoke_trust(base: str | Path) -> bool:
     return removed
 
 
-def ensure_trusted(base: str | Path, approve: Callable[[str], bool] | None = None) -> None:
+def ensure_trusted(
+    base: str | Path,
+    approve: Callable[[str], bool] | None = None,
+    *,
+    persist: bool = True,
+) -> None:
     """Gate code-executing operations on a harness folder.
 
     Resolution order: already trusted → ``HIVELOOM_TRUST`` env policy
     (``always``/``never``) → interactive ``approve(path)`` callback →
-    :class:`SpecError` with the ways to proceed.
+    :class:`SpecError` with the ways to proceed. ``persist=False`` lets an
+    approval hold for this call only: the trust store is never written (an
+    ephemeral run leaves nothing behind).
     """
     if is_trusted(base):
         return
     key = _key(base)
     policy = os.environ.get("HIVELOOM_TRUST", "").strip().lower()
     if policy == "always":
-        record_trust(base)
+        if persist:
+            record_trust(base)
         return
     if policy == "never":
         raise SpecError(f"harness at {key} is not trusted (HIVELOOM_TRUST=never)")
     if approve is not None and approve(key):
-        record_trust(base)
+        if persist:
+            record_trust(base)
         return
     raise SpecError(
         f"harness at {key} is not trusted. Its code hooks would run with your "

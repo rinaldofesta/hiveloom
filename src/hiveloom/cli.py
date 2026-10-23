@@ -1009,6 +1009,43 @@ def _trust_prompt(json_output: bool):
     return approve
 
 
+def _parse_overrides(sets: list[str], set_files: list[str]) -> dict[str, Any] | None:
+    """Turn repeated ``--set PATH=VALUE`` / ``--set-file PATH=FILE`` into one mapping.
+
+    VALUE is read as a YAML scalar (``0.2``, ``true``, ``"text"``); a file's
+    whole text is the value, for prompts too long for a command line.
+    """
+    import yaml
+
+    overrides: dict[str, Any] = {}
+
+    def add(item: str, flag: str, read) -> None:
+        path, sep, raw = item.partition("=")
+        if not sep or not path:
+            raise SpecError(f"{flag} expects PATH=VALUE (got {item!r})")
+        if path in overrides:
+            raise SpecError(f"{path} is set more than once")
+        overrides[path] = read(raw)
+
+    def read_file(name: str) -> str:
+        try:
+            return Path(name).read_text(encoding="utf-8")
+        except OSError as exc:
+            raise SpecError(f"--set-file could not read {name}: {exc}") from exc
+
+    def read_scalar(raw: str) -> Any:
+        try:
+            return yaml.safe_load(raw)
+        except yaml.YAMLError as exc:
+            raise SpecError(f"--set value {raw!r} is not valid YAML: {exc}") from exc
+
+    for item in sets:
+        add(item, "--set", read_scalar)
+    for item in set_files:
+        add(item, "--set-file", read_file)
+    return overrides or None
+
+
 def _network_prompt(non_interactive: bool):
     """Ask for one run-scoped HTTP destination, or fail closed."""
     if non_interactive:
@@ -1279,6 +1316,27 @@ def run(
     provider: str = typer.Option(
         None, "--provider", help="Override provider for this run without editing the harness."
     ),
+    set_values: list[str] = typer.Option(
+        [],
+        "--set",
+        help=(
+            "Per-run override PATH=VALUE (repeatable); the path must be listed in the "
+            "harness's `overridable`. VALUE is a YAML scalar. Never edits the harness."
+        ),
+    ),
+    set_files: list[str] = typer.Option(
+        [],
+        "--set-file",
+        help="Per-run override PATH=FILE: the file's text is the value (long prompts).",
+    ),
+    ephemeral: bool = typer.Option(
+        False,
+        "--ephemeral",
+        help=(
+            "Persist nothing: no Hive ingest, traces in a temp dir removed afterwards, "
+            "no trust-store write (approval holds for this run), no local paths in the result."
+        ),
+    ),
     run_id: str = typer.Option(
         None, "--run-id", help="Use this caller-allocated run id."
     ),
@@ -1337,13 +1395,26 @@ def run(
                 ExitCode.SPEC_ERROR,
             )
             return
+        overrides = _parse_overrides(set_values, set_files)
+        if ephemeral and (resume or sync or trace_dir is not None):
+            _fail(
+                "--ephemeral persists nothing and cannot be combined with "
+                "--resume, --sync or --trace-dir",
+                json_output,
+                ExitCode.SPEC_ERROR,
+            )
+            return
         if sync:
             from hiveloom import cloud as cloud_mod
 
             pulled = cloud_mod.pull(harness_dir)
             if pulled["changed"] and not (json_output or stream):
                 _console.print(f"[green]pulled[/green] @ {pulled['version_hash']}")
-        if approve:
+        approve_trust = _trust_prompt(json_output or stream)
+        if approve and ephemeral:
+            # Approval for this run only: record_trust would write the store.
+            approve_trust = lambda _path: True  # noqa: E731
+        elif approve:
             trust_mod.record_trust(harness_dir)
         if dry_run and resume:
             _fail(
@@ -1371,7 +1442,9 @@ def run(
                 literal_input=literal_input,
                 model_override=model,
                 provider_override=provider,
-                approve_trust=_trust_prompt(json_output),
+                overrides=overrides,
+                approve_trust=approve_trust,
+                ephemeral=ephemeral,
             )
             if json_output:
                 _emit_json({"ok": True, "dry_run": True, **info})
@@ -1426,7 +1499,8 @@ def run(
                 trace_dir=trace_dir,
                 model_override=model,
                 provider_override=provider,
-                approve_trust=_trust_prompt(json_output or stream),
+                overrides=overrides,
+                approve_trust=approve_trust,
                 approve_network=_network_prompt(json_output or stream),
             )
         else:
@@ -1439,7 +1513,9 @@ def run(
                 trace_dir=trace_dir,
                 model_override=model,
                 provider_override=provider,
-                approve_trust=_trust_prompt(json_output or stream),
+                overrides=overrides,
+                ephemeral=ephemeral,
+                approve_trust=approve_trust,
                 approve_network=_network_prompt(json_output or stream),
             )
         payload = runner.run_result_payload(result)

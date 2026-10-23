@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Spec-declared per-run overrides.** A harness lists the paths a caller may
+  set for one run in `overridable` (`system_prompt`, `model.temperature`,
+  `model.max_tokens`, `model.params.<key>`, `loop.steps.<id>.instruction`; the
+  safety layer can never be listed, and the field is frozen from evolution).
+  `run_harness(..., overrides=...)` and `hiveloom run --set PATH=VALUE` /
+  `--set-file PATH=FILE` apply them to an in-memory spec that is fully
+  re-validated; `harness.yaml` is never written, an unlisted path or invalid
+  value exits 3, and `runtime_config.overrides` records each path with a value
+  hash.
+- **Ephemeral runs.** `run_harness(..., ephemeral=True)` and
+  `hiveloom run --ephemeral` persist nothing: journal and scratch Hive in a
+  temp directory removed afterwards, no trust-store write, no ingest, and no
+  local paths in the result.
+- **Served-model attribution.** Provider calls and the run envelope report
+  `model_substituted` when the effective model differs from the requested one.
+  An OpenAI-compatible provider can keep extra gateway response fields in
+  `provider_metadata` (`response_metadata_fields`, also a `models.yaml` key).
+- **`hiveloom guide embedding`**: running a harness inside a host process.
+
 ## [1.3.0] - 2026-10-04
 
 The research and real-demos release. Research programs let a director model

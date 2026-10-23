@@ -12,6 +12,8 @@ from __future__ import annotations
 import errno
 import logging
 import re
+import shutil
+import tempfile
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -29,6 +31,7 @@ from hiveloom.loop.control import RunControl
 from hiveloom.models.provider import ModelConfig as ProviderModelConfig
 from hiveloom.models.provider import ModelProvider
 from hiveloom.models.router import ModelRouter
+from hiveloom.overrides import apply_overrides, override_digests
 from hiveloom.package import resolve_trace_dir
 from hiveloom.playbooks import PlaybookManager, load_playbooks
 from hiveloom.private import RunBoundary
@@ -160,7 +163,9 @@ def dry_run(
     literal_input: bool = False,
     model_override: str | None = None,
     provider_override: str | None = None,
+    overrides: dict[str, Any] | None = None,
     approve_trust=None,
+    ephemeral: bool = False,
 ) -> dict[str, Any]:
     """Assemble the first model call without calling the model provider.
 
@@ -170,11 +175,15 @@ def dry_run(
     """
     yaml_path = harness_path(harness_dir)
     base = yaml_path.parent
-    trust.ensure_trusted(base, approve_trust)
+    trust.ensure_trusted(base, approve_trust, persist=not ephemeral)
     spec = load_spec(yaml_path)
     spec = _apply_runtime_model_overrides(spec, model_override, provider_override)
+    spec = apply_overrides(spec, overrides)
     runtime_config = _runtime_config(
-        spec, model_override=model_override, provider_override=provider_override
+        spec,
+        model_override=model_override,
+        provider_override=provider_override,
+        overrides=overrides,
     )
     resolve_hooks(spec, base)
     run_boundary = RunBoundary.resolve(base, spec)
@@ -280,6 +289,8 @@ def run_harness(
     trace_dir: str | Path | None = None,
     model_override: str | None = None,
     provider_override: str | None = None,
+    overrides: dict[str, Any] | None = None,
+    ephemeral: bool = False,
     resume_messages: list[dict[str, Any]] | None = None,
     lineage: dict[str, Any] | None = None,
     providers: dict[str, ModelProvider] | None = None,
@@ -329,6 +340,21 @@ def run_harness(
     from ambient credentials. Supplying it keeps an embedding caller (and the
     test suite) in control of what a swap actually talks to.
 
+    ``overrides`` maps dotted spec paths to per-run values (``system_prompt``,
+    ``model.temperature``, ...). Each path must be listed in the spec's
+    ``overridable``; the resulting spec is fully re-validated in memory and the
+    harness is never written. The applied paths and a hash of each value are
+    reported in ``runtime_config["overrides"]``, and the version hash reflects
+    the resolved spec.
+
+    ``ephemeral`` leaves nothing behind: the journal, spill store and a scratch
+    Hive live in a temporary directory removed before this returns, a trust
+    approval holds for this run only, and the returned result carries no local
+    paths. It is incompatible with ``resume_messages``, ``trace_dir`` and
+    ``hive_path`` (each names something that must outlive the run), and it
+    implies ``ingest=False``. Tools the harness itself declares (``file_write``,
+    a code tool) still act on whatever they are pointed at.
+
     ``resume_messages`` re-enters a run part-way through: the folded
     conversation from a parent run's journal is seeded verbatim and **no new
     task statement is appended**, because the seeded thread already ends where
@@ -360,13 +386,24 @@ def run_harness(
     the server as "read this file" would be an arbitrary file read, so those
     ``input`` fields are always literal text.
     """
+    if ephemeral and (
+        resume_messages is not None or trace_dir is not None or hive_path is not None
+    ):
+        raise ValueError(
+            "ephemeral runs persist nothing, so they cannot be combined with "
+            "resume_messages, trace_dir or hive_path"
+        )
     yaml_path = harness_path(harness_dir)
     base = yaml_path.parent
-    trust.ensure_trusted(base, approve_trust)
+    trust.ensure_trusted(base, approve_trust, persist=not ephemeral)
     spec = load_spec(yaml_path)
     spec = _apply_runtime_model_overrides(spec, model_override, provider_override)
+    spec = apply_overrides(spec, overrides)
     runtime_config = _runtime_config(
-        spec, model_override=model_override, provider_override=provider_override
+        spec,
+        model_override=model_override,
+        provider_override=provider_override,
+        overrides=overrides,
     )
     run_id = validate_run_id(run_id) if run_id is not None else new_run_id()
     resolve_hooks(spec, base)
@@ -388,6 +425,15 @@ def run_harness(
         history, run_input = _resolve_conversation(
             base, input_value, conversation, literal_input=literal_input
         )
+    scratch: Path | None = None
+    if ephemeral:
+        # Named here, created just before the run: everything the run persists
+        # (journal, spill, notes, a Hive for recall/propose_memory) goes under
+        # one directory that the `finally` below removes.
+        scratch = Path(tempfile.gettempdir()) / f"hiveloom-ephemeral-{uuid.uuid4().hex}"
+        trace_dir = scratch / "traces"
+        hive_path = scratch / "hive.db"
+        ingest = False
     # Resolve caller overrides exactly once, before any component is built.
     # Every path-sensitive component receives this same effective boundary.
     run_boundary = RunBoundary.resolve(
@@ -404,6 +450,8 @@ def run_harness(
     if gap is not None:
         registry.close()
         raise ConfinementUnavailable(gap)
+    if scratch is not None:
+        scratch.mkdir(mode=0o700)
     # Bound before the try: several steps below it can raise, and an unbound
     # name in the finally would mask the real error with a NameError.
     router: ModelRouter | None = None
@@ -488,12 +536,28 @@ def run_harness(
             hive_path=hive_path,
             run_boundary=run_boundary,
             approve_network=approve_network,
+            ephemeral=ephemeral,
         )
         result = loop.run()
     finally:
         registry.close()
         if router is not None:
             router.close()
+        if scratch is not None:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+    if ephemeral:
+        # The journal is gone; a path to it would only be a dangling local detail.
+        result = result.model_copy(
+            update={
+                "trace_path": "",
+                "execution": (
+                    result.execution.model_copy(update={"trace_path": ""})
+                    if result.execution is not None
+                    else None
+                ),
+            }
+        )
 
     if ingest:
         indexed = _ingest_trace(trace.path, hive_path)
@@ -707,11 +771,16 @@ def _runtime_config(
     *,
     model_override: str | None,
     provider_override: str | None,
+    overrides: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    config: dict[str, Any] = {
         "requested": {"model": model_override, "provider": provider_override},
         "resolved": {"model": spec.model.id, "provider": spec.model.provider},
     }
+    if overrides:
+        # Paths and value hashes only: the values may be long prompts.
+        config["overrides"] = override_digests(overrides)
+    return config
 
 
 def resolve_and_ingest(target: str | Path, hive) -> str:

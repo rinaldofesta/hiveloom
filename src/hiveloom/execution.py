@@ -53,6 +53,13 @@ class RunExecutionEnvelope(BaseModel):
     effective_provider: str | None = None
     effective_model: str | None = None
     models_used: list[dict[str, Any]] = Field(default_factory=list)
+    model_substituted: bool = Field(
+        default=False,
+        description=(
+            "True when any provider call reported an effective model different "
+            "from the model requested for that call."
+        ),
+    )
     started_at: str = ""
     finished_at: str = ""
     duration_ms: int = 0

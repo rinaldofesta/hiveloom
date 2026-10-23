@@ -22,6 +22,7 @@ hiveloom explain <path>       # field docs, e.g. `hiveloom explain context.compa
 | `name` / `description` | Identity (Hive + packaging) | required |
 | `model` | The executor model | `provider` (builtin: `claude`), `id` (default `claude-haiku-4-5`), `max_tokens` (validated against registered `max_output_tokens` when known), `params` (bounded provider fields; see [models.md](models.md#provider-request-parameters)), `temperature` (optional; unset = omitted from API calls — current Anthropic models reject it as deprecated) |
 | `system_prompt` | System prompt for the executor | required; the evolver may rewrite it |
+| `overridable` | Paths a caller may set for one run | closed allowlist: `system_prompt`, `model.temperature`, `model.max_tokens`, `model.params.<key>`, `loop.steps.<step_id>.instruction`; safety-layer paths are a validation error; **always frozen** (see [embedding.md](embedding.md)) |
 | `tools` | Tools available to the loop | list of `{builtin: name}` or `{code: path.py:fn, description: ...}` |
 | `mcp_servers` | MCP servers whose tools join the loop | `transport: stdio\|http`; discovered eagerly (incl. `run --dry-run`); **always frozen** |
 | `extensions` | Harness-local extension modules | paths/modules loaded before validation; **always frozen** |
